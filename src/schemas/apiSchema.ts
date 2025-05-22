@@ -474,7 +474,9 @@ const zSettings = z.object({
   'main.sub.setting.name': z.any(),
   'single.setting': z.any(),
   'LiteGraph.Node.DefaultPadding': z.boolean(),
-  'LiteGraph.Pointer.TrackpadGestures': z.boolean()
+  'LiteGraph.Pointer.TrackpadGestures': z.boolean(),
+  // 🌟外部插件的定义
+  'AGL.Locale': z.string()
 })
 
 export type EmbeddingsResponse = z.infer<typeof zEmbeddingsResponse>

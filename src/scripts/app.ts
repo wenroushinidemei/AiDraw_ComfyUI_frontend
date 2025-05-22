@@ -69,6 +69,7 @@ import {
 } from '@/utils/migration/migrateReroute'
 import { deserialiseAndCreate } from '@/utils/vintageClipboard'
 
+import { aglLocaleInit } from './aiDraw/aglLocaleInit'
 import { type ComfyApi, PromptExecutionError, api } from './api'
 import { defaultGraph } from './defaultGraph'
 import { pruneWidgets } from './domWidget'
@@ -640,7 +641,11 @@ export class ComfyApp {
     })
 
     api.addEventListener('executed', ({ detail }) => {
+      // 获取到生图结果，解析并渲染到画布上
       const output = this.nodeOutputs[detail.display_node || detail.node]
+      const node = this.graph.getNodeById(detail.display_node || detail.node)
+      const prompt_ids = JSON.parse(localStorage.getItem('prompt_ids') ?? '[]')
+      if (!prompt_ids.includes(detail.prompt_id)) return
       if (detail.merge && output) {
         for (const k in detail.output ?? {}) {
           const v = output[k]
@@ -653,7 +658,6 @@ export class ComfyApp {
       } else {
         this.nodeOutputs[detail.display_node || detail.node] = detail.output
       }
-      const node = this.graph.getNodeById(detail.display_node || detail.node)
       if (node) {
         if (node.onExecuted) node.onExecuted(detail.output)
       }
@@ -741,6 +745,8 @@ export class ComfyApp {
    * Set up the app on the page
    */
   async setup(canvasEl: HTMLCanvasElement) {
+    // 最初始化函数
+    aglLocaleInit()
     // @ts-expect-error fixme ts strict error
     this.bodyTop = document.getElementById('comfyui-body-top')
     // @ts-expect-error fixme ts strict error
@@ -1079,8 +1085,59 @@ export class ComfyApp {
           useSettingStore().get('Comfy.EnableWorkflowViewRestore') &&
           graphData.extra?.ds
         ) {
-          this.canvas.ds.offset = graphData.extra.ds.offset
-          this.canvas.ds.scale = graphData.extra.ds.scale
+          // 自动计算中心点和缩放比例，使得首次打开可以看到完整的workflow
+          const x =
+            (graphData.nodes.reduce(
+              (acc, n) => Math.min(acc, n.pos[0]),
+              Number.MAX_SAFE_INTEGER
+            ) +
+              graphData.nodes.reduce(
+                (acc, n) => Math.max(acc, n.pos[0]),
+                Number.MIN_SAFE_INTEGER
+              )) /
+            2
+          const y =
+            (graphData.nodes.reduce(
+              (acc, n) => Math.min(acc, n.pos[1]),
+              Number.MAX_SAFE_INTEGER
+            ) +
+              graphData.nodes.reduce(
+                (acc, n) => Math.max(acc, n.pos[1]),
+                Number.MIN_SAFE_INTEGER
+              )) /
+            2
+          const xSize =
+            graphData.nodes.reduce((acc, n) => acc + n.size[0], 0) /
+            graphData.nodes.length
+          const ySize =
+            graphData.nodes.reduce((acc, n) => acc + n.size[1], 0) /
+            graphData.nodes.length
+          const xDiff =
+            (graphData.nodes.reduce(
+              (acc, n) => Math.min(acc, n.pos[0]),
+              Number.MAX_SAFE_INTEGER
+            ) -
+              graphData.nodes.reduce(
+                (acc, n) => Math.max(acc, n.pos[0]),
+                Number.MIN_SAFE_INTEGER
+              )) /
+            2
+          const yDiff =
+            (graphData.nodes.reduce(
+              (acc, n) => Math.min(acc, n.pos[1]),
+              Number.MAX_SAFE_INTEGER
+            ) -
+              graphData.nodes.reduce(
+                (acc, n) => Math.max(acc, n.pos[1]),
+                Number.MIN_SAFE_INTEGER
+              )) /
+            2
+          // 最终效果：首先展示左上角，然后大部分情况下向右和向下能展示工作流全貌，xSize / 4和ySize / 2时手动微整的
+          this.canvas.ds.offset = [
+            -x + Math.max(-xDiff, xDiff) + xSize / 4,
+            -y + Math.max(-yDiff, yDiff) + ySize / 2
+          ]
+          this.canvas.ds.scale = 0.7
         } else {
           // @note: Set view after the graph has been rendered once. fitView uses
           // boundingRect on nodes to calculate the view bounds, which only become
@@ -1179,6 +1236,7 @@ export class ComfyApp {
     })
   }
 
+  // 执行之大中间商函数
   async queuePrompt(
     number: number,
     batchCount: number = 1,
@@ -1209,10 +1267,35 @@ export class ComfyApp {
           executeWidgetsCallback(this.graph.nodes, 'beforeQueued')
 
           const p = await this.graphToPrompt(this.graph, { queueNodeIds })
+          // 存储prompt_ids用于隔离不同用户的prompt下的生图结果
           try {
             api.authToken = comfyOrgAuthToken
             api.apiKey = comfyOrgApiKey ?? undefined
             const res = await api.queuePrompt(number, p)
+
+            try {
+              const prompt_ids = JSON.parse(
+                localStorage.getItem('prompt_ids') ?? '[]'
+              )
+              if (prompt_ids.length < 30) {
+                localStorage.setItem(
+                  'prompt_ids',
+                  JSON.stringify([...prompt_ids, res.prompt_id])
+                )
+              } else {
+                // 如果超过50个，则删除第一个
+                localStorage.setItem(
+                  'prompt_ids',
+                  JSON.stringify([...prompt_ids.slice(1), res.prompt_id])
+                )
+              }
+            } catch (e) {
+              localStorage.setItem(
+                'prompt_ids',
+                JSON.stringify([res.prompt_id])
+              )
+            }
+
             delete api.authToken
             delete api.apiKey
             executionStore.lastNodeErrors = res.node_errors ?? null
@@ -1576,6 +1659,7 @@ export class ComfyApp {
       this.registerNodeDef(nodeId, defs[nodeId])
     }
     for (const node of this.graph.nodes) {
+      // 渲染node节点时的高宽值赋值
       const def = defs[node.type]
       // Allow primitive nodes to handle refresh
       node.refreshComboInNode?.(defs)

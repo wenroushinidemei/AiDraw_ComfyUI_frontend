@@ -610,6 +610,7 @@ export const useLitegraphService = () => {
     }
   }
 
+  // 创建新节点的地方
   function addNodeOnGraph(
     nodeDef: ComfyNodeDefV1 | ComfyNodeDefV2,
     options: Record<string, any> = {}
@@ -619,7 +620,11 @@ export const useLitegraphService = () => {
     const node = LiteGraph.createNode(
       nodeDef.name,
       nodeDef.display_name,
-      options
+      // 避免pos值为小数，从而导致不必要的后续四舍五入产生的额外diff
+      {
+        ...options,
+        pos: [Math.round(options.pos[0]), Math.round(options.pos[1])]
+      }
     )
 
     // @ts-expect-error fixme ts strict error
