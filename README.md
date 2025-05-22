@@ -1,5 +1,13 @@
 <div align="center">
 
+# 爱画改造
+</div>
+
+- 更换包管理为pnpm
+- 使用prettier格式化代码
+
+<div align="center">
+
 # ComfyUI_frontend
 
 **Official front-end implementation of [ComfyUI](https://github.com/comfyanonymous/ComfyUI).**
