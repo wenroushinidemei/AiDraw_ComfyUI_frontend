@@ -23,8 +23,10 @@ const VITE_REMOTE_DEV = process.env.VITE_REMOTE_DEV === 'true'
 const DISABLE_TEMPLATES_PROXY = process.env.DISABLE_TEMPLATES_PROXY === 'true'
 const DISABLE_VUE_PLUGINS = process.env.DISABLE_VUE_PLUGINS === 'true'
 
+// 🌟配置开发环境的后端服务地址
 const DEV_SERVER_COMFYUI_URL =
-  process.env.DEV_SERVER_COMFYUI_URL || 'http://127.0.0.1:8188'
+  process.env.DEV_SERVER_COMFYUI_URL ||
+  'http://aidraw-test.qc-ai.cn:7443/comfyui/'
 
 export default defineConfig({
   base: '',
@@ -34,7 +36,13 @@ export default defineConfig({
       '/internal': {
         target: DEV_SERVER_COMFYUI_URL
       },
-
+      // 🌟配置具体的开发环境的后端服务代理地址
+      '/api/v1/workflow': {
+        target: 'http://aidraw-test.qc-ai.cn:7443/'
+      },
+      '/api/v1/consume': {
+        target: 'http://aidraw-test.qc-ai.cn:7443/'
+      },
       '/api': {
         target: DEV_SERVER_COMFYUI_URL,
         // Return empty array for extensions API as these modules

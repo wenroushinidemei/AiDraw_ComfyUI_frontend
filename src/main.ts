@@ -15,9 +15,14 @@ import { VueFire, VueFireAuth } from 'vuefire'
 import '@/assets/css/style.css'
 import { FIREBASE_CONFIG } from '@/config/firebase'
 import router from '@/router'
+import { checkLocation } from '@/scripts/aiDraw/checkLocation'
+import { reFetchForToken } from '@/scripts/aiDraw/reFetchForToken'
 
 import App from './App.vue'
 import { i18n } from './i18n'
+
+checkLocation()
+reFetchForToken()
 
 const ComfyUIPreset = definePreset(Aura, {
   semantic: {
