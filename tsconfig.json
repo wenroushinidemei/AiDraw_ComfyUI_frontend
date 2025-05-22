@@ -29,7 +29,7 @@
     },
     "typeRoots": ["src/types", "node_modules/@types"],
     "outDir": "./dist",
-    "rootDir": "./",
+    "rootDir": "./"
   },
   "include": [
     "src/**/*",
@@ -37,6 +37,7 @@
     "src/types/**/*.d.ts",
     "tests-ui/**/*",
     "global.d.ts",
+    "eslint.config.js",
     "vite.config.mts"
   ]
 }

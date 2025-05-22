@@ -35,7 +35,11 @@ import {
   type ComfyNodeDef,
   validateComfyNodeDef
 } from '@/schemas/nodeDefSchema'
+import { usePaymentStore } from '@/stores/aiDraw/payment'
+import { useQueueSettingsStore } from '@/stores/queueStore'
+import { useToastStore } from '@/stores/toastStore'
 import { WorkflowTemplates } from '@/types/workflowTemplateTypes'
+import { goPlatform, isOnlineUrl } from '@/utils/aiDraw/url'
 
 interface QueuePromptRequestBody {
   client_id: string
@@ -78,6 +82,7 @@ interface QueuePromptRequestBody {
   }
   front?: boolean
   number?: number
+  cost?: number // 扣费费用
 }
 
 /** Dictionary of Frontend-generated API calls */
@@ -273,7 +278,7 @@ export class ComfyApi extends EventTarget {
     return this.api_base + route
   }
 
-  fetchApi(route: string, options?: RequestInit) {
+  fetchApi(route: string, options?: RequestInit, isGateway = false) {
     if (!options) {
       options = {}
     }
@@ -291,7 +296,22 @@ export class ComfyApi extends EventTarget {
     } else {
       options.headers['Comfy-User'] = this.user
     }
-    return fetch(this.apiURL(route), options)
+    // 如果走网关，则需要单独指定网址
+    return fetch(isGateway ? route : this.apiURL(route), options).then(
+      (res) => {
+        // 401 未登录监听处理
+        if (res.status === 401) {
+          // 移除token，这样外面判断为未登录时不会阻止
+          localStorage.removeItem('accessToken')
+          goPlatform('/login')
+        }
+        // 402为余额不足提醒
+        if (res.status === 402) {
+          throw new Error('余额不足，请充值后重试')
+        }
+        return res
+      }
+    )
   }
 
   override addEventListener<TEvent extends keyof ApiEvents>(
@@ -369,7 +389,7 @@ export class ComfyApi extends EventTarget {
       existingSession = '?clientId=' + existingSession
     }
     this.socket = new WebSocket(
-      `ws${window.location.protocol === 'https:' ? 's' : ''}://${this.api_host}${this.api_base}/ws${existingSession}`
+      `ws${window.location.protocol === 'https:' ? 's' : ''}://${this.api_host}${this.api_base}/ws${existingSession}?wsAuth=${localStorage.getItem('accessToken')}`
     )
     this.socket.binaryType = 'arraybuffer'
 
@@ -398,6 +418,7 @@ export class ComfyApi extends EventTarget {
       }
     })
 
+    // websocket枚举处理
     this.socket.addEventListener('message', (event) => {
       try {
         if (event.data instanceof ArrayBuffer) {
@@ -447,6 +468,7 @@ export class ComfyApi extends EventTarget {
                 window.name = clientId // use window name so it isnt reused when duplicating tabs
                 sessionStorage.setItem('clientId', clientId) // store in session storage so duplicate tab can load correct workflow
               }
+              // 全局通信status事件
               this.dispatchCustomEvent('status', msg.data.status ?? null)
               break
             case 'executing':
@@ -579,7 +601,10 @@ export class ComfyApi extends EventTarget {
         auth_token_comfy_org: this.authToken,
         api_key_comfy_org: this.apiKey,
         extra_pnginfo: { workflow }
-      }
+      },
+      cost:
+        Number(usePaymentStore().calculateCost) *
+        useQueueSettingsStore().batchCount
     }
 
     if (number === -1) {
@@ -588,13 +613,56 @@ export class ComfyApi extends EventTarget {
       body.number = number
     }
 
-    const res = await this.fetchApi('/prompt', {
+    // 增加prompt接口的传参
+    // 获取当前 URL
+    const currentUrl = new URL(window.location.href)
+    // 从 URL 查询参数中获取 workflowName 的值
+    let workflowName = currentUrl.searchParams.get('workflowName')
+    // 如果 切换了工作流，则不用url上的信息，暂时从本地存储的workflowName中获取workflowName
+    if ((window as any)['CurrentWorkflow'] !== workflowName) {
+      workflowName = (window as any)['CurrentWorkflow']
+    }
+
+    const options = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(body)
-    })
+    }
+    let res: any
+    // 因为走网管需要，避免被代理的网页地址给自动加载comfyui/路由，所以写死路径
+    if (isOnlineUrl()) {
+      res = await this.fetchApi(
+        'https://aidraw.qc-ai.cn/api/v1/consume/comfyui/api/prompt' +
+          (workflowName
+            ? `?workflowName=${encodeURIComponent(workflowName)}`
+            : ''),
+        options,
+        true
+      )
+    } else {
+      // 如果时localhost则，让vite代理
+      if (window.location.href.startsWith('http://localhost')) {
+        res = await this.fetchApi(
+          '/api/v1/consume/comfyui/api/prompt' +
+            (workflowName
+              ? `?workflowName=${encodeURIComponent(workflowName)}`
+              : ''),
+          options,
+          true
+        )
+      } else {
+        res = await this.fetchApi(
+          'http://aidraw-test.qc-ai.cn:7443/api/v1/consume/comfyui/api/prompt' +
+            (workflowName
+              ? `?workflowName=${encodeURIComponent(workflowName)}`
+              : ''),
+          options,
+          true
+        )
+      }
+    }
 
     if (res.status !== 200) {
       throw new PromptExecutionError(await res.json())
@@ -680,6 +748,12 @@ export class ComfyApi extends EventTarget {
   async getQueue(): Promise<{
     Running: RunningTaskItem[]
     Pending: PendingTaskItem[]
+    Progress: {
+      code: 1
+      source: string
+      source_progress: number
+      task_progress: number
+    }[]
   }> {
     try {
       const res = await this.fetchApi('/queue')
@@ -694,11 +768,15 @@ export class ComfyApi extends EventTarget {
         Pending: data.queue_pending.map((prompt: Record<number, any>) => ({
           taskType: 'Pending',
           prompt
-        }))
+        })),
+        // 去最后一个元素，默认是进度
+        Progress: data.queue_running?.map(
+          (prompt: string | any[]) => prompt?.[prompt.length - 1]
+        )
       }
     } catch (error) {
       console.error(error)
-      return { Running: [], Pending: [] }
+      return { Running: [], Pending: [], Progress: [] }
     }
   }
 
@@ -843,8 +921,28 @@ export class ComfyApi extends EventTarget {
   /**
    * Gets a user data file for the current user
    */
-  async getUserData(file: string, options?: RequestInit) {
-    return this.fetchApi(`/userdata/${encodeURIComponent(file)}`, options)
+  // TODO:加载workflow文件请求函数
+  async getUserData(
+    file: string,
+    options?: RequestInit,
+    id?: string,
+    from?: string
+  ) {
+    let queryStr = ''
+    // 增加参数，id 和 from
+    if (id || from) {
+      if (!from) {
+        queryStr = `?id=${id}`
+      } else if (!id) {
+        queryStr = `?from=${from}`
+      } else {
+        queryStr = `?id=${id}&from=${from}`
+      }
+    }
+    return this.fetchApi(
+      `/userdata/${encodeURIComponent(file)}` + queryStr,
+      options
+    )
   }
 
   /**
@@ -862,15 +960,18 @@ export class ComfyApi extends EventTarget {
       stringify?: boolean
       throwOnError?: boolean
       full_info?: boolean
+      standby?: boolean
     } = {
       overwrite: true,
       stringify: true,
       throwOnError: true,
-      full_info: false
+      full_info: false,
+      standby: false
     }
   ): Promise<Response> {
     const resp = await this.fetchApi(
-      `/userdata/${encodeURIComponent(file)}?overwrite=${options.overwrite}&full_info=${options.full_info}`,
+      // overwrite为空时作为false处理
+      `/userdata/${encodeURIComponent(file)}?overwrite=${!!options.overwrite}&full_info=${options.full_info}${options.standby ? '&publishStatus=standby' : ''}`,
       {
         method: 'POST',
         body: options?.stringify ? JSON.stringify(data) : data,
@@ -881,6 +982,16 @@ export class ComfyApi extends EventTarget {
       throw new Error(
         `Error storing user data file '${file}': ${resp.status} ${(await resp).statusText}`
       )
+    } else {
+      // const { t } = useI18n() // 必须在setup中引入
+      // 成功提示
+      resp.status === 200 &&
+        useToastStore().add({
+          severity: 'success',
+          summary: 'Success',
+          detail: '保存成功',
+          life: 3000
+        })
     }
 
     return resp

@@ -1,3 +1,4 @@
 # .prettierignore
 auto-imports.d.ts
 components.d.ts
+lint-staged.config.js
