@@ -97,14 +97,14 @@ export const useUserStore = defineStore('user', () => {
   }
 
   return {
-    users,
-    currentUser,
-    isMultiUserServer,
-    needsLogin,
-    initialized,
-    initialize,
-    createUser,
-    login,
-    logout
+    // users,
+    // currentUser,
+    // isMultiUserServer,
+    // needsLogin,
+    // initialized,
+    // initialize,
+    // createUser,
+    // login,
+    // logout
   }
 })

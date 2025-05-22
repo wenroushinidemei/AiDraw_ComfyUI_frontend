@@ -1,5 +1,5 @@
 <!-- A message that displays the current user -->
-<template>
+<!-- <template>
   <Message
     v-if="userStore.isMultiUserServer"
     severity="info"
@@ -13,17 +13,17 @@
       <Button icon="pi pi-sign-out" text @click="logout" />
     </div>
   </Message>
-</template>
+</template> -->
 
 <script setup lang="ts">
-import Button from 'primevue/button'
-import Message from 'primevue/message'
+// import Button from 'primevue/button'
+// import Message from 'primevue/message'
 
-import { useUserStore } from '@/stores/userStore'
+// import { useUserStore } from '@/stores/userStore'
 
-const userStore = useUserStore()
-const logout = async () => {
-  await userStore.logout()
-  window.location.reload()
-}
+// const userStore = useUserStore()
+// const logout = async () => {
+//   await userStore.logout()
+//   window.location.reload()
+// }
 </script>

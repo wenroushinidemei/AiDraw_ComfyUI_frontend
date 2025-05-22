@@ -2,7 +2,7 @@
   <div class="settings-container">
     <ScrollPanel class="settings-sidebar flex-shrink-0 p-2 w-48 2xl:w-64">
       <SearchBox
-        v-model:modelValue="searchQuery"
+        v-model:model-value="searchQuery"
         class="settings-search-box w-full mb-2"
         :placeholder="$t('g.searchSettings') + '...'"
         :debounce-time="128"
@@ -40,7 +40,7 @@
           :value="category.label ?? ''"
         >
           <template #header>
-            <CurrentUserMessage v-if="tabValue === 'Comfy'" />
+            <!-- <CurrentUserMessage v-if="tabValue === 'Comfy'" /> -->
             <FirstTimeUIMessage v-if="tabValue === 'Comfy'" />
             <ColorPaletteMessage v-if="tabValue === 'Appearance'" />
           </template>
@@ -75,7 +75,7 @@ import { ISettingGroup, SettingParams } from '@/types/settingTypes'
 import { flattenTree } from '@/utils/treeUtil'
 
 import ColorPaletteMessage from './setting/ColorPaletteMessage.vue'
-import CurrentUserMessage from './setting/CurrentUserMessage.vue'
+// import CurrentUserMessage from './setting/CurrentUserMessage.vue'
 import FirstTimeUIMessage from './setting/FirstTimeUIMessage.vue'
 import PanelTemplate from './setting/PanelTemplate.vue'
 import SettingsPanel from './setting/SettingsPanel.vue'
@@ -130,7 +130,7 @@ const searchResults = computed<ISettingGroup[]>(() =>
 )
 
 const tabValue = computed<string>(() =>
-  inSearch.value ? 'Search Results' : activeCategory.value?.label ?? ''
+  inSearch.value ? 'Search Results' : (activeCategory.value?.label ?? '')
 )
 
 // Don't allow null category to be set outside of search.
